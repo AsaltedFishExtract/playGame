@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+	<title>Document</title>
+	<style>
+		html,body{
+			height: 100%;
+		}
+		body{
+			margin: 0;
+			padding: 0;
+		}
+		.init,.game{
+			height: 100%;
+			position: relative;
+		}
+		.init{
+			background-image: url(images/init.png);
+			background-size: 100% 100%;
+		}
+		.start{
+			position: absolute;
+			left: 50%;
+			transform: translateX(-50%);
+			bottom: 25%;
+			width: 50%;
+			height: 40px;
+			border:2px solid gray;
+			border-radius: 20px;
+			text-align: center;
+			line-height: 40px;
+		}
+		.game{
+			display: none;
+			background-image: url(images/bg.png);
+			background-size: 100% 100%;
+			overflow: hidden;
+		}
+		.plane{
+			position: absolute;
+			bottom: 10px;
+		}
+		.game-over{
+			display: none;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%,-50%);
+			width: 50%;
+			height: 40px;
+			line-height: 40px;
+			font-size: 24px;
+			text-align: center;
+			border: 1px solid gray;
+		}
+		.game-agin{
+			display: none;
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			transform: translate(-50%,-50%);
+			width: 50%;
+			height: 40px;
+			line-height: 40px;
+			font-size: 20px;
+			text-align: center;
+			border: 1px solid gray;
+			border-radius: 8px;
+		}
+		.score{
+			position: absolute;
+			left: 5px;
+			top: 5px;
+			width: 120px;
+			height: 30px;
+			line-height: 30px;
+			border: 1px solid gray;
+		}
+	</style>
+</head>
+<body>
+	<div class="init">
+		<div class="start">开始游戏</div>
+	</div>
+	<div class="game">
+		<img class="plane" src="images/p.png" />
+		<div class="game-over">Game Over</div>
+		<div class="score">得分：<span></span></div>
+		<div class="game-agin">重新开始</div>
+	</div>
+</body>
+<script src="js/zepto.min.js"></script>
+<script>
+	var bodyW = $("body").width();					//获取body的宽度
+	var bodyH = $("body").height();					//获取body的高度
+	var gameBgTop = 0;											//game背景图的初始高度
+	var planeW = 66;												//我方飞机宽度
+	var planeH = 80;												//我方飞机高度
+	var smallW = 34;												//小飞机宽度
+	var smallH = 24;												//小飞机高度
+	var middleW = 46;												//中飞机宽度
+	var middleH = 60;												//中飞机高度
+	var bigW = 110;													//大飞机宽度
+	var bigH = 169;													//大飞机高度
+	var bulletW = 6;												//子弹宽度
+	var bulletH = 14;												//子弹高度
+	var bullets = [];												//存放所有的子弹
+	var enemys = [];												//存放所有的敌方飞机
+	var control = 0;											  //游戏控制器
+	var t;																	//全局计时器
+	var speed = 1;													//游戏初始速度
+	var score = 0;													//游戏初始得分
+
+	//点击开始游戏，会把init隐藏，显示game的窗口
+	$(".start").on("click",function(){
+		$(".init").css("display","none");		//隐藏游戏初始画面
+		$(".game").css("display","block");	//打开游戏画面
+
+		//把我方飞机的位置居中
+		$(".plane").css("left",(bodyW-planeW)/2);
+
+		//控制我方飞机的移动
+		$(".plane").on("touchstart",function(e){
+			//首先获取点击时手指和图片位置的距离
+			var disX = e.targetTouches[0].pageX-$(this).offset().left;
+			var disY = e.targetTouches[0].pageY-$(this).offset().top;
+			$(".plane").on("touchmove",function(e){
+				//通过当前的手指的位置获取元素的位置
+				var pLeft = e.targetTouches[0].pageX-disX;
+				var pTop  = e.targetTouches[0].pageY-disY;
+				//控制飞机元素不能超出左右边界
+				pLeft = pLeft<=0?0:pLeft;
+				pLeft = pLeft>=(bodyW-planeW)?(bodyW-planeW):pLeft;
+				//控制飞机元素不能超出上下边界			
+				pTop = pTop<=0?0:pTop;
+				pTop = pTop>=(bodyH-planeH)?(bodyH-planeH):pTop;
+				//改变元素的位置
+				$(this).css({
+					left:pLeft,
+					top:pTop
+				})
+			})
+			//当手指离开屏幕，解除touchstart touchmove的事件绑定
+			$(".plane").on("touchend",function(){
+		   	$(".plane").off('touchstart','touchmove');     
+		 	}); 		
+		})
+
+		function Bullet(_left,_top){
+			this.$bullet=$("<img src='images/bullet.png'>");
+			this.$bullet.css({
+				position:"absolute",
+				left:_left,
+				top:_top
+			});
+			$(".game").append(this.$bullet);
+			this.move = function(){
+				this.$bullet.css({
+					top:this.$bullet.offset().top-20
+				})
+			}
+		}
+
+		function Enemy(src,bSrc,_w,_h,hp,speed,score){
+			this.src     = src;					//敌机的图片
+			this.bSrc    = bSrc;				//敌机的爆炸图片
+			this.w       = _w;					//敌机的宽度
+			this.h       = _h;				  //敌机的高度
+			this.hp      = hp;				  //敌机的血量
+			this.speed   = speed;		    //敌机的下降速度
+			this.canMove = true;				//敌机是否可以移动
+			this.score   = score;				//敌机的分值
+
+			this.$enemy=$("<img src='"+this.src+"'>");
+			this.$enemy.css({
+				position:"absolute",
+				left:~~(Math.random()*(bodyW-this.w)),		
+				top:-this.h               	//初始的高度为图片高度的负值
+			});
+
+			$(".game").append(this.$enemy);
+			this.move = function(){
+				if(this.canMove){
+					this.$enemy.css({
+						top:this.$enemy.offset().top+this.speed
+					})
+				}
+			}			
+		}
+
+		t = setInterval(function(){
+			control++;
+			//不断的移动game的背景图的高度
+			$(".game").css({
+				backgroundPosition:"0 "+gameBgTop+"px"
+			})
+			//背景图高度大于窗口高度时归零
+			gameBgTop = gameBgTop>=bodyH?0:gameBgTop+0.5;			
+
+			//创建子弹，通过我方飞机的位置来判断子弹的初始位置
+			var bLeft = $(".plane").offset().left+(planeW-bulletW)/2;
+			var bTop  = $(".plane").offset().top;
+			//创建新的子弹，添加到bullets数组中
+			if(control%5 == 0) bullets.push(new Bullet(bLeft,bTop));
+			//循环所有的子弹
+			for(var i=0;i<bullets.length;i++){
+				//移动所有的子弹
+				bullets[i].move();
+				//如果子弹超出了屏幕顶部，删除子弹
+				if(bullets[i].$bullet.offset().top < -14){
+					//删除子弹DOM元素
+					bullets[i].$bullet.remove();
+					//删除子弹数组元素
+					bullets.splice(i,1)
+				}
+			}
+			//隔50次创建一个小飞机
+			if(control%50 == 0) {
+				enemys.push(new Enemy("images/a.png","images/a.gif",smallW,smallH,1,3*speed,100));
+			}
+			//隔100次创建一个中飞机
+			if(control%100 == 0) {
+				enemys.push(new Enemy("images/b.png","images/b.gif",middleW,middleH,5,2*speed,500));
+			}
+			//隔250次创建一个大飞机
+			if(control%250 == 0) {
+				enemys.push(new Enemy("images/c.png","images/c.gif",bigW,bigH,10,1*speed,1000));
+			}
+			for(var i=0;i<enemys.length;i++){
+				//移动所有的飞机
+				enemys[i].move();
+				//如果飞机超出了屏幕底部，删除飞机
+				if(enemys[i].$enemy.offset().top > bodyH){
+					//删除飞机DOM元素
+					enemys[i].$enemy.remove();
+					//删除飞机数组元素
+					enemys.splice(i,1)
+				}
+			}
+
+			//所有的子弹和所有的敌机要检测
+			//所有的敌机和我方的飞机要检测
+			for(var j=0;j<bullets.length;j++){
+				var bLeft = bullets[j].$bullet.offset().left;	//子弹的Left
+				var bTop  = bullets[j].$bullet.offset().top;	//子弹的top
+				for(var k=0;k<enemys.length;k++){
+					var eLeft = enemys[k].$enemy.offset().left;	//敌机的Left
+					var eTop  = enemys[k].$enemy.offset().top;	//敌机的Top
+					var eW    = enemys[k].w;										//敌机的宽度
+					var eH    = enemys[k].h;										//敌机的高度
+					var pLeft = $(".plane").offset().left;			//我方飞机的Left
+					var pTop  = $(".plane").offset().top;			  //我方飞机的Top
+					//检测横向和纵向的各两组数据		
+					//判断敌机和我方飞机是否相撞			
+					if( eLeft>=(pLeft-eW) && eLeft<=(pLeft+planeW) && eTop>=(pTop-eH+40) && eTop<=(pTop+planeH)){
+						$(".plane").attr("src","images/p.gif")		//修改我方飞机图片
+						clearInterval(t);													//清除计时器
+						$(".game-over").css("display","block")		//显示游戏结束
+					}
+
+					//2.7 add w  点击游戏结束  显示重新开始
+                    $(".game-over").on('click',function () {
+                        $(".game-over").css('display','none');
+						$('.game-agin').css('display','block');
+                    });
+
+					//判断敌机和子弹是否相撞			
+					if( eLeft>=(bLeft-eW) && eLeft<=(bLeft+bulletW) && eTop>=(bTop-eH) && eTop<=(bTop+bulletH)){
+						bullets[j].$bullet.remove();		//子弹击中敌机，子弹消失
+						bullets.splice(j,1);						//从数组中删除子弹
+						enemys[k].hp--;									//被击中的飞机血量-1
+						if(enemys[k].hp==0){						//如果血量为0敌机爆炸
+							score += enemys[k].score;			//增加当前爆炸的分级的分数
+							$(".score>span").html(score)	//把分数更新到DOM中
+							//替换敌机的爆炸图片
+							enemys[k].$enemy.attr("src",enemys[k].bSrc);	
+							enemys[k].canMove = false;				//禁止爆炸的飞机移动
+							var _enemy = enemys[k].$enemy;		//保存当前的爆炸元素
+							enemys.splice(k,1);								//从数组中删除子弹
+							setTimeout(function(){
+								_enemy.remove();								//删除爆炸的元素
+							},1000)
+						}
+					}
+				}
+			}
+			//根据游戏的分值来控制敌机的降落速度
+			if(score>10000) speed =2;
+			if(score>20000) speed =3;
+			if(score>30000) speed =4;
+
+			//到500后清零
+			control = control>=500?0:control;
+		},30);	
+	});
+    //2.7 10:41 add w 点击重新开始  重新开始游戏
+    $('.game-agin').on('click',function () {
+
+		//	初始化游戏
+        $('.game-agin').css('display','none');  //隐藏重新开始
+        $(".init").css("display","none");		//隐藏游戏初始画面
+        $(".game").css("display","block");	//打开游戏画面
+
+        //把我方飞机的位置居中
+        $(".plane").css("left",(bodyW-planeW)/2);
+
+        //控制我方飞机的移动
+        $(".plane").on("touchstart",function(e){
+            //首先获取点击时手指和图片位置的距离
+            var disX = e.targetTouches[0].pageX-$(this).offset().left;
+            var disY = e.targetTouches[0].pageY-$(this).offset().top;
+            $(".plane").on("touchmove",function(e){
+                //通过当前的手指的位置获取元素的位置
+                var pLeft = e.targetTouches[0].pageX-disX;
+                var pTop  = e.targetTouches[0].pageY-disY;
+                //控制飞机元素不能超出左右边界
+                pLeft = pLeft<=0?0:pLeft;
+                pLeft = pLeft>=(bodyW-planeW)?(bodyW-planeW):pLeft;
+                //控制飞机元素不能超出上下边界
+                pTop = pTop<=0?0:pTop;
+                pTop = pTop>=(bodyH-planeH)?(bodyH-planeH):pTop;
+                //改变元素的位置
+                $(this).css({
+                    left:pLeft,
+                    top:pTop
+                })
+            })
+            //当手指离开屏幕，解除touchstart touchmove的事件绑定
+            $(".plane").on("touchend",function(){
+                $(".plane").off('touchstart','touchmove');
+            });
+        })
+
+        function Bullet(_left,_top){
+            this.$bullet=$("<img src='images/bullet.png'>");
+            this.$bullet.css({
+                position:"absolute",
+                left:_left,
+                top:_top
+            });
+            $(".game").append(this.$bullet);
+            this.move = function(){
+                this.$bullet.css({
+                    top:this.$bullet.offset().top-20
+                })
+            }
+        }
+
+        function Enemy(src,bSrc,_w,_h,hp,speed,score){
+            this.src     = src;					//敌机的图片
+            this.bSrc    = bSrc;				//敌机的爆炸图片
+            this.w       = _w;					//敌机的宽度
+            this.h       = _h;				  //敌机的高度
+            this.hp      = hp;				  //敌机的血量
+            this.speed   = speed;		    //敌机的下降速度
+            this.canMove = true;				//敌机是否可以移动
+            this.score   = score;				//敌机的分值
+
+            this.$enemy=$("<img src='"+this.src+"'>");
+            this.$enemy.css({
+                position:"absolute",
+                left:~~(Math.random()*(bodyW-this.w)),
+                top:-this.h               	//初始的高度为图片高度的负值
+            });
+
+            $(".game").append(this.$enemy);
+            this.move = function(){
+                if(this.canMove){
+                    this.$enemy.css({
+                        top:this.$enemy.offset().top+this.speed
+                    })
+                }
+            }
+        }
+
+        t = setInterval(function(){
+            control++;
+            //不断的移动game的背景图的高度
+            $(".game").css({
+                backgroundPosition:"0 "+gameBgTop+"px"
+            })
+            //背景图高度大于窗口高度时归零
+            gameBgTop = gameBgTop>=bodyH?0:gameBgTop+0.5;
+
+            //创建子弹，通过我方飞机的位置来判断子弹的初始位置
+            var bLeft = $(".plane").offset().left+(planeW-bulletW)/2;
+            var bTop  = $(".plane").offset().top;
+            //创建新的子弹，添加到bullets数组中
+            if(control%5 == 0) bullets.push(new Bullet(bLeft,bTop));
+            //循环所有的子弹
+            for(var i=0;i<bullets.length;i++){
+                //移动所有的子弹
+                bullets[i].move();
+                //如果子弹超出了屏幕顶部，删除子弹
+                if(bullets[i].$bullet.offset().top < -14){
+                    //删除子弹DOM元素
+                    bullets[i].$bullet.remove();
+                    //删除子弹数组元素
+                    bullets.splice(i,1)
+                }
+            }
+            //隔50次创建一个小飞机
+            if(control%50 == 0) {
+                enemys.push(new Enemy("images/a.png","images/a.gif",smallW,smallH,1,3*speed,100));
+            }
+            //隔100次创建一个中飞机
+            if(control%100 == 0) {
+                enemys.push(new Enemy("images/b.png","images/b.gif",middleW,middleH,5,2*speed,500));
+            }
+            //隔250次创建一个大飞机
+            if(control%250 == 0) {
+                enemys.push(new Enemy("images/c.png","images/c.gif",bigW,bigH,10,1*speed,1000));
+            }
+            for(var i=0;i<enemys.length;i++){
+                //移动所有的飞机
+                enemys[i].move();
+                //如果飞机超出了屏幕底部，删除飞机
+                if(enemys[i].$enemy.offset().top > bodyH){
+                    //删除飞机DOM元素
+                    enemys[i].$enemy.remove();
+                    //删除飞机数组元素
+                    enemys.splice(i,1)
+                }
+            }
+
+            //所有的子弹和所有的敌机要检测
+            //所有的敌机和我方的飞机要检测
+            for(var j=0;j<bullets.length;j++){
+                var bLeft = bullets[j].$bullet.offset().left;	//子弹的Left
+                var bTop  = bullets[j].$bullet.offset().top;	//子弹的top
+                for(var k=0;k<enemys.length;k++){
+                    var eLeft = enemys[k].$enemy.offset().left;	//敌机的Left
+                    var eTop  = enemys[k].$enemy.offset().top;	//敌机的Top
+                    var eW    = enemys[k].w;										//敌机的宽度
+                    var eH    = enemys[k].h;										//敌机的高度
+                    var pLeft = $(".plane").offset().left;			//我方飞机的Left
+                    var pTop  = $(".plane").offset().top;			  //我方飞机的Top
+                    //检测横向和纵向的各两组数据
+                    //判断敌机和我方飞机是否相撞
+                    if( eLeft>=(pLeft-eW) && eLeft<=(pLeft+planeW) && eTop>=(pTop-eH+40) && eTop<=(pTop+planeH)){
+                        $(".plane").attr("src","images/p.gif")		//修改我方飞机图片
+                        clearInterval(t);													//清除计时器
+                        $(".game-over").css("display","block")		//显示游戏结束
+                    }
+
+                    //2.7 add w  点击游戏结束  显示重新开始
+                    $(".game-over").on('click',function () {
+                        $(".game-over").css('display','none');
+                        $('.game-agin').css('display','block');
+                    });
+
+                    //判断敌机和子弹是否相撞
+                    if( eLeft>=(bLeft-eW) && eLeft<=(bLeft+bulletW) && eTop>=(bTop-eH) && eTop<=(bTop+bulletH)){
+                        bullets[j].$bullet.remove();		//子弹击中敌机，子弹消失
+                        bullets.splice(j,1);						//从数组中删除子弹
+                        enemys[k].hp--;									//被击中的飞机血量-1
+                        if(enemys[k].hp==0){						//如果血量为0敌机爆炸
+                            score += enemys[k].score;			//增加当前爆炸的分级的分数
+                            $(".score>span").html(score)	//把分数更新到DOM中
+                            //替换敌机的爆炸图片
+                            enemys[k].$enemy.attr("src",enemys[k].bSrc);
+                            enemys[k].canMove = false;				//禁止爆炸的飞机移动
+                            var _enemy = enemys[k].$enemy;		//保存当前的爆炸元素
+                            enemys.splice(k,1);								//从数组中删除子弹
+                            setTimeout(function(){
+                                _enemy.remove();								//删除爆炸的元素
+                            },1000)
+                        }
+                    }
+                }
+            }
+            //根据游戏的分值来控制敌机的降落速度
+            if(score>10000) speed =2;
+            if(score>20000) speed =3;
+            if(score>30000) speed =4;
+
+            //到500后清零
+            control = control>=500?0:control;
+        },30);
+    });
+</script>
+</html>
